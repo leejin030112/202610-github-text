@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>오늘의 날씨</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      color: #fff;
+      transition: background 1s ease;
+    }
+
+    /* 동적 배경 — JS에서 날씨에 따라 클래스 토글 */
+    body.sunny   { background: linear-gradient(135deg, #f7971e, #ffd200, #ff6a00); }
+    body.cloudy  { background: linear-gradient(135deg, #606c88, #3f4c6b, #2c3e50); }
+    body.rainy   { background: linear-gradient(135deg, #1a2a6c, #b21f1f, #4a569d); }
+    body.snowy   { background: linear-gradient(135deg, #e6dada, #8ec5fc, #274046); }
+    body.night   { background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); }
+
+    .card {
+      background: rgba(255,255,255,.08);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 28px;
+      padding: 48px 56px;
+      min-width: 380px;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,.25);
+      animation: fadeUp .8s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .icon { font-size: 80px; margin-bottom: 12px; animation: float 3s ease-in-out infinite; }
+    @keyframes float {
+      0%,100% { transform: translateY(0); }
+      50%     { transform: translateY(-10px); }
+    }
+
+    .temp {
+      font-size: 72px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 4px;
+      background: linear-gradient(to right, #fff, #cce7ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .desc {
+      font-size: 20px;
+      font-weight: 400;
+      opacity: .85;
+      margin-bottom: 24px;
+      text-transform: capitalize;
+    }
+
+    .location {
+      font-size: 15px;
+      font-weight: 300;
+      opacity: .65;
+      margin-bottom: 28px;
+      letter-spacing: .5px;
+    }
+
+    .details {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+
+    .detail-item {
+      background: rgba(255,255,255,.06);
+      border-radius: 16px;
+      padding: 16px 8px;
+      transition: transform .2s, background .2s;
+    }
+    .detail-item:hover {
+      transform: translateY(-4px);
+      background: rgba(255,255,255,.12);
+    }
+
+    .detail-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: .5;
+      margin-bottom: 6px;
+    }
+
+    .detail-value {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .loading {
+      font-size: 18px;
+      opacity: .7;
+    }
+    .loading::after {
+      content: '';
+      animation: dots 1.4s steps(4,end) infinite;
+    }
+    @keyframes dots {
+      0%  { content: ''; }
+      25% { content: '.'; }
+      50% { content: '..'; }
+      75% { content: '...'; }
+    }
+
+    .error {
+      color: #ff6b6b;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <p class="loading" id="loading">날씨 정보를 불러오는 중</p>
+  </div>
+
+  <script>
+    // WMO 코드 → 아이콘·설명 매핑
+    const WMO = {
+      0:  { icon: '☀️', desc: '맑음' },
+      1:  { icon: '🌤️', desc: '대체로 맑음' },
+      2:  { icon: '⛅',  desc: '구름 약간' },
+      3:  { icon: '☁️', desc: '흐림' },
+      45: { icon: '🌫️', desc: '안개' },
+      48: { icon: '🌫️', desc: '짙은 안개' },
+      51: { icon: '🌦️', desc: '이슬비' },
+      53: { icon: '🌦️', desc: '이슬비' },
+      55: { icon: '🌦️', desc: '이슬비' },
+      61: { icon: '🌧️', desc: '비' },
+      63: { icon: '🌧️', desc: '비' },
+      65: { icon: '🌧️', desc: '강한 비' },
+      71: { icon: '❄️', desc: '눈' },
+      73: { icon: '❄️', desc: '눈' },
+      75: { icon: '❄️', desc: '폭설' },
+      80: { icon: '🌧️', desc: '소나기' },
+      81: { icon: '🌧️', desc: '소나기' },
+      82: { icon: '⛈️', desc: '폭우' },
+      95: { icon: '⛈️', desc: '뇌우' },
+      96: { icon: '⛈️', desc: '우박 뇌우' },
+      99: { icon: '⛈️', desc: '우박 뇌우' },
+    };
+
+    function bgClass(code, isNight) {
+      if (isNight) return 'night';
+      if ([0,1].includes(code)) return 'sunny';
+      if ([2,3,45,48].includes(code)) return 'cloudy';
+      if ([71,73,75].includes(code)) return 'snowy';
+      return 'rainy';
+    }
+
+    async function fetchWeather(lat, lon, cityName) {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+        + `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day`
+        + `&timezone=auto`;
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('API 요청 실패');
+      const data = await res.json();
+      const c = data.current;
+
+      const wmo = WMO[c.weather_code] || { icon: '🌈', desc: '알 수 없음' };
+      const isNight = c.is_day === 0;
+
+      document.body.className = bgClass(c.weather_code, isNight);
+
+      document.getElementById('card').innerHTML = `
+        <div class="icon">${wmo.icon}</div>
+        <div class="temp">${Math.round(c.temperature_2m)}°</div>
+        <div class="desc">${wmo.desc}</div>
+        <div class="location">📍 ${cityName}</div>
+        <div class="details">
+          <div class="detail-item">
+            <div class="detail-label">체감</div>
+            <div class="detail-value">${Math.round(c.apparent_temperature)}°</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">습도</div>
+            <div class="detail-value">${c.relative_humidity_2m}%</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">바람</div>
+            <div class="detail-value">${c.wind_speed_10m}<small>km/h</small></div>
+          </div>
+        </div>
+      `;
+    }
+
+    // 위치 가져오기
+    function init() {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const { latitude, longitude } = pos.coords;
+            // 역지오코딩으로 도시명 가져오기
+            let city = `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+            try {
+              const geo = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=ko`
+              );
+              const geoData = await geo.json();
+              city = geoData.address?.city
+                || geoData.address?.town
+                || geoData.address?.county
+                || geoData.address?.state
+                || city;
+            } catch (_) {}
+            fetchWeather(latitude, longitude, city);
+          },
+          () => {
+            // 위치 권한 거부 시 서울 기본값
+            fetchWeather(37.5665, 126.9780, '서울');
+          }
+        );
+      } else {
+        fetchWeather(37.5665, 126.9780, '서울');
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
